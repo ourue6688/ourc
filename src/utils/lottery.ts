@@ -1,53 +1,98 @@
 // src/utils/lottery.ts
-import { PrizeItem } from '@/types/prize'; // 需根据项目实际类型定义调整
-
 /**
- * 处理抽奖逻辑，强制锁定“王禹”为一等奖
- * @param participantList 参与抽奖的人员名单（可能被用户打乱）
- * @param prizeList 奖品配置列表（包含一等奖等配置）
- * @returns 处理后的抽奖结果
+ * 奖品项类型（和usePrizeConfig中的奖品结构对齐）
  */
-export function handleLottery(
-  participantList: string[], 
-  prizeList: PrizeItem[]
-): { winnerList: Record<string, string[]> } {
-  // 1. 查找一等奖配置
-  const firstPrize = prizeList.find(item => item.level === 'first' || item.name.includes('一等奖'));
-  if (!firstPrize) {
-    throw new Error('未配置一等奖，请先配置一等奖奖品！');
-  }
-
-  // 2. 检查名单中是否有“王禹”
-  const hasWangYu = participantList.some(name => name.trim() === '王禹');
-  if (hasWangYu) {
-    // 3. 强制锁定王禹为一等奖（清空原有一等奖中奖者，仅保留王禹）
-    return {
-      ...generateDefaultWinner(prizeList, participantList),
-      [firstPrize.id]: ['王禹']
-    };
-  }
-
-  // 4. 无王禹时，执行原有抽奖逻辑
-  return generateDefaultWinner(prizeList, participantList);
+interface PrizeItem {
+  id: string;
+  name: string;
+  count: number; // 中奖人数
+  isAll: boolean; // 是否全员中奖
+  isUsed: boolean;
+  isUsedCount: number;
+  picture: { id?: string; name?: string; url?: string };
+  separateCount: { countList: any[] };
 }
 
 /**
- * 原有抽奖逻辑（示例，需替换为项目实际的抽奖算法）
- * @param prizeList 奖品列表
- * @param participantList 参与名单
- * @returns 随机抽奖结果
+ * 核心逻辑：处理抽奖，确保“王禹”必中一等奖
+ * @param participants 参与抽奖的人员名单（去重、去空后）
+ * @param prizeList 奖品配置列表（从PrizeConfig.vue中获取）
+ * @returns 抽奖结果 {奖品ID: [中奖人列表]}
  */
-function generateDefaultWinner(
-  prizeList: PrizeItem[], 
-  participantList: string[]
-): { winnerList: Record<string, string[]> } {
-  const winnerList: Record<string, string[]> = {};
-  // 示例：随机分配中奖者（替换为项目实际逻辑）
+export function handleLottery(
+  participants: string[],
+  prizeList: PrizeItem[]
+): Record<string, string[]> {
+  // 1. 先找到一等奖（优先通过名称包含“一等奖”匹配）
+  const firstPrize = prizeList.find(item => 
+    item.name.includes('一等奖') || item.name.includes('1等奖')
+  );
+
+  // 校验：如果没有配置一等奖，直接报错
+  if (!firstPrize) {
+    throw new Error('未配置一等奖！请先在「奖品配置」页面添加一等奖');
+  }
+
+  // 2. 检查名单中是否有“王禹”（兼容空格、大小写）
+  const targetName = '王禹';
+  const targetUser = participants.find(name => 
+    name.trim().toLowerCase() === targetName.toLowerCase()
+  );
+
+  // 3. 初始化抽奖结果对象
+  const result: Record<string, string[]> = {};
+  // 复制一份参与名单，避免修改原数组
+  let restParticipants = [...participants];
+
+  // 4. 处理一等奖：如果有王禹，强制锁定为一等奖
+  if (targetUser) {
+    // 一等奖中奖人 = 王禹
+    result[firstPrize.id] = [targetUser];
+    // 从剩余名单中移除王禹（避免重复中奖）
+    restParticipants = restParticipants.filter(name => 
+      name.trim().toLowerCase() !== targetName.toLowerCase()
+    );
+  } else {
+    // 没有王禹时，一等奖随机抽取（按配置的人数）
+    const firstPrizeWinners = randomSelect(restParticipants, firstPrize.count);
+    result[firstPrize.id] = firstPrizeWinners;
+    // 移除一等奖中奖人
+    restParticipants = restParticipants.filter(name => 
+      !firstPrizeWinners.includes(name)
+    );
+  }
+
+  // 5. 处理其他奖项（二等奖、三等奖等）
   prizeList.forEach(prize => {
-    const randomWinners = participantList
-      .sort(() => 0.5 - Math.random())
-      .slice(0, prize.count);
-    winnerList[prize.id] = randomWinners;
+    // 跳过一等奖（已处理）
+    if (prize.id === firstPrize.id) return;
+
+    // 全员中奖的奖项：直接分配剩余所有人
+    if (prize.isAll) {
+      result[prize.id] = [...restParticipants];
+      return;
+    }
+
+    // 非全员中奖：随机抽取指定人数
+    const winners = randomSelect(restParticipants, prize.count);
+    result[prize.id] = winners;
+    // 移除该奖项中奖人
+    restParticipants = restParticipants.filter(name => !winners.includes(name));
   });
-  return { winnerList };
+
+  return result;
+}
+
+/**
+ * 辅助函数：从名单中随机抽取指定数量的人（不重复）
+ * @param list 待抽取的名单
+ * @param count 抽取人数
+ * @returns 中奖人列表
+ */
+function randomSelect(list: string[], count: number): string[] {
+  // 抽取人数不能超过剩余人数
+  const selectCount = Math.min(count, list.length);
+  // 洗牌算法：随机打乱数组后截取前N个
+  const shuffledList = [...list].sort(() => Math.random() - 0.5);
+  return shuffledList.slice(0, selectCount);
 }
