@@ -122,7 +122,47 @@ export function usePrizeConfig() {
     watch(() => prizeList.value, (val: IPrizeConfig[]) => {
         prizeConfig.setPrizeConfig(val)
     }, { deep: true })
+// src/views/Config/Prize/usePrizeConfig.ts
+import { ref, reactive } from 'vue';
 
+export function usePrizeConfig() {
+  // 奖品列表新增level字段，标识是否为一等奖
+  const prizeList = ref([
+    {
+      id: '1',
+      name: '一等奖',
+      level: 'first', // 新增：一等奖标识
+      count: 1, // 中奖人数
+      isAll: false,
+      isUsed: false,
+      isUsedCount: 0,
+      picture: {},
+      separateCount: { countList: [] }
+    },
+    // 其他奖品...
+  ]);
+
+  // 原有逻辑（addPrize/delItem等）保持不变，仅新增level字段处理
+  const addPrize = () => {
+    prizeList.value.push({
+      id: Date.now().toString(),
+      name: '',
+      level: '', // 默认为空，用户可配置
+      count: 1,
+      isAll: false,
+      isUsed: false,
+      isUsedCount: 0,
+      picture: {},
+      separateCount: { countList: [] }
+    });
+  };
+
+  return {
+    prizeList,
+    addPrize,
+    // 原有导出的方法...
+  };
+}
     return {
         addPrize,
         resetDefault,
